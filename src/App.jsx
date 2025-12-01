@@ -18,6 +18,7 @@ function App() {
   // IPFS 데이터를 가져오는 함수
   const fetchIPFSMetadata = async (cid) => {
     try {
+      if (!cid) return {};
       const res = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`);
       const data = await res.json();
       return data;
@@ -31,21 +32,33 @@ function App() {
     try {
       const provider = new ethers.JsonRpcProvider(RPC_URL);
       const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
-      const count = await contract.getVerificationCount();
+      
+      let count = 0;
+      try {
+        count = await contract.getVerificationCount();
+      } catch (e) {
+        console.log("No records found.");
+        return;
+      }
       
       const records = [];
-      // 최신 5개만 로딩
       const loadCount = Number(count) > 10 ? 10 : Number(count);
       
       for (let i = Number(count) - 1; i >= Number(count) - loadCount; i--) {
         const item = await contract.history(i);
-        
-        // 핵심: 블록체인에는 CID만 있지만, 여기서 IPFS 내용을 가져옴
         const metadata = await fetchIPFSMetadata(item.ipfsCid);
         
+        // [수정 1] 데이터 이름 충돌 방지를 위해 명시적으로 할당
         records.push({
-          ...item,
-          ...metadata
+          verdict: item.result, // 블록체인 저장값 (Human/AI 판별 결과)
+          ipfsCid: item.ipfsCid,
+          timestamp: item.timestamp,
+          verifier: item.verifier,
+          
+          // IPFS 저장값 (게임 상세 정보)
+          white: metadata.white || "Unknown",
+          black: metadata.black || "Unknown",
+          gameResult: metadata.result || "Unknown" // 경기 승패 (1-0 등)
         });
       }
       setHistory(records);
@@ -89,7 +102,6 @@ function App() {
       chess.loadPgn(pgnInput);
       const header = chess.header();
       
-      // PGN 헤더에서 정보 추출
       const whiteName = header['White'] || "Unknown Player";
       const blackName = header['Black'] || "Unknown Player";
       const gameResult = header['Result'] || "Unknown";
@@ -98,7 +110,6 @@ function App() {
       if (header['WhiteType'] === 'Program') verdict = "AI Suspected";
       if (chess.history().length < 20 && header['Result'] !== '1/2-1/2') verdict = "AI Suspected (Too Fast)";
 
-      // IPFS에 상세 정보 포함하여 저장
       setStatusMsg("기보 저장 중");
       const ipfsData = {
         verdict, 
@@ -112,7 +123,6 @@ function App() {
       
       const cid = await uploadToIPFS(ipfsData);
 
-      // 블록체인에는 기존처럼 CID만 저장
       setStatusMsg("기보 등록 중");
       const contractWithSigner = new ethers.Contract(CONTRACT_ADDRESS, ABI, wallet);
       
@@ -175,13 +185,19 @@ function App() {
     },
     vsText: { fontSize: "1.2rem", fontWeight: "bold", color: "#2c3e50", margin: "5px 0" },
     metaInfo: { fontSize: "13px", color: "#95a5a6", marginTop: "8px" },
-    badge: (verdict) => ({
-      display: "inline-block", padding: "4px 12px", borderRadius: "20px", 
-      fontSize: "12px", fontWeight: "bold",
-      backgroundColor: verdict.includes("Human") ? "#e1f7d5" : "#ffeaa7", 
-      color: verdict.includes("Human") ? "#2ecc71" : "#d63031", 
-      marginBottom: "8px"
-    }),
+    
+    // [수정 2] 안전한 뱃지 함수 (데이터가 없어도 에러 안 나게 처리)
+    badge: (verdict) => {
+      const safeVerdict = verdict || "Unknown";
+      const isHuman = safeVerdict.includes("Human");
+      return {
+        display: "inline-block", padding: "4px 12px", borderRadius: "20px", 
+        fontSize: "12px", fontWeight: "bold",
+        backgroundColor: isHuman ? "#e1f7d5" : "#ffeaa7", 
+        color: isHuman ? "#2ecc71" : "#d63031", 
+        marginBottom: "8px"
+      };
+    },
     link: { color: "#3498db", textDecoration: "none", fontSize: "14px", marginLeft: "10px" }
   };
 
@@ -248,13 +264,17 @@ function App() {
       <ul style={styles.historyList}>
         {history.length === 0 ? <p style={{color: "#95a5a6", fontStyle: "italic"}}>No records found yet.</p> : history.map((h, i) => (
           <li key={i} style={styles.historyItem}>
-            <span style={styles.badge(h.result)}>{h.result}</span>
+            {/* 판별 결과 (verdict) */}
+            <span style={styles.badge(h.verdict)}>{h.verdict || "Unknown"}</span>
             
+            {/* 플레이어 정보 */}
             <div style={styles.vsText}>
-              White: {h.white || "Loading..."} vs Black: {h.black || "Loading..."}
+              White: {h.white} vs Black: {h.black}
             </div>
+            
+            {/* 게임 승패 (gameResult) */}
             <div style={{fontWeight: "bold", color: "#e67e22", marginBottom: "5px"}}>
-              Winner: {h.result === "1/2-1/2" ? "Draw" : h.result === "1-0" ? "White" : h.result === "0-1" ? "Black" : "Unknown"}
+              Winner: {h.gameResult === "1/2-1/2" ? "Draw" : h.gameResult === "1-0" ? "White" : h.gameResult === "0-1" ? "Black" : h.gameResult}
             </div>
 
             <div style={{borderTop: "1px solid #f1f2f6", paddingTop: "10px", marginTop: "10px", display: "flex", justifyContent: "space-between", alignItems: "center"}}>
