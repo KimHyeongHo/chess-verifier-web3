@@ -5,7 +5,6 @@ export default async function handler(req, res) {
 
   try {
     const { data } = req.body;
-    // 서버 환경변수에서 키를 안전하게 가져옴
     const PINATA_JWT = process.env.PINATA_JWT;
 
     if (!PINATA_JWT) {
