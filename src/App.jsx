@@ -216,7 +216,7 @@ function App() {
             <label style={styles.label}>Upload Private Key (.txt)</label>
             <input type="file" accept=".txt" onChange={handleFileUpload} style={styles.input} />
             <p style={{fontSize: "12px", color: "#e74c3c", marginTop: "8px"}}>
-              * 0x로 시작하는 개인키 파일을 선택하세요. 서버에 저장되지 않습니다.
+              * 개인키 파일을 선택하세요. 서버에 저장되지 않습니다.
             </p>
           </div>
         ) : (
